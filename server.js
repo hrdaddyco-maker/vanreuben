@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const { Pool } = require('pg');
 const { migrate } = require('./db/migrate');
+const { sendFulfillmentEmail, formatAddress, formatOrderDate, formatAmount, escapeHtml } = require('./lib/fulfillment');
 
 const PORT = Number(process.env.PORT) || 10000;
 const SKU = 'VR-001';
@@ -202,27 +203,43 @@ async function fulfillCheckoutSession(stripe, session) {
     );
   }
 
-  if (email && pool) {
+  let existing = { email_sent_at: null, fulfillment_email_sent_at: null, id: null, created_at: new Date() };
+  if (pool) {
     const already = await pool.query(
-      'SELECT email_sent_at FROM orders WHERE stripe_session_id = $1',
+      'SELECT id, email_sent_at, fulfillment_email_sent_at, created_at FROM orders WHERE stripe_session_id = $1',
       [full.id]
     );
-    if (already.rows[0] && already.rows[0].email_sent_at) return;
+    if (already.rows[0]) existing = already.rows[0];
   }
-  const sent = await sendConfirmation({ email, size, sku, amount, currency, shippingName, shippingAddress, sessionId: full.id });
-  if (sent && pool) {
-    await pool.query(
-      'UPDATE orders SET email_sent_at = now(), updated_at = now() WHERE stripe_session_id = $1 AND email_sent_at IS NULL',
-      [full.id]
-    );
+  if (!existing.email_sent_at) {
+    const sent = await sendConfirmation({ email, size, sku, amount, currency, shippingName, shippingAddress, sessionId: full.id });
+    if (sent && pool) {
+      await pool.query(
+        'UPDATE orders SET email_sent_at = now(), updated_at = now() WHERE stripe_session_id = $1 AND email_sent_at IS NULL',
+        [full.id]
+      );
+    }
   }
-}
-
-function formatAddress(addr) {
-  if (!addr) return '';
-  return [addr.line1, addr.line2, [addr.city, addr.state, addr.postal_code].filter(Boolean).join(' '), addr.country]
-    .filter(Boolean)
-    .join('\n');
+  if (!existing.fulfillment_email_sent_at) {
+    const sentFulfillment = await sendFulfillmentEmail({
+      orderId: existing.id || full.id,
+      date: existing.created_at || new Date(),
+      size,
+      sku,
+      customerName: shippingName,
+      customerEmail: email,
+      shippingAddress,
+      amountCents: amount,
+      currency,
+      adminBaseUrl: process.env.PUBLIC_API_URL || '',
+    });
+    if (sentFulfillment && pool) {
+      await pool.query(
+        'UPDATE orders SET fulfillment_email_sent_at = now(), updated_at = now() WHERE stripe_session_id = $1 AND fulfillment_email_sent_at IS NULL',
+        [full.id]
+      );
+    }
+  }
 }
 
 async function sendConfirmation({ email, size, sku, amount, currency, shippingName, shippingAddress }) {
@@ -281,9 +298,82 @@ app.get(['/cancel.html', '/cancel'], (_req, res) => {
 app.use('/img', express.static(path.join(__dirname, 'img'), { maxAge: '7d' }));
 app.use('/fonts', express.static(path.join(__dirname, 'fonts'), { maxAge: '30d' }));
 
+
+const crypto = require('crypto');
+function readAdminToken(req) {
+  const q = (req.query && req.query.token) || '';
+  const auth = req.headers.authorization || '';
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+  return q || bearer;
+}
+function isAdmin(req) {
+  const expected = (process.env.ADMIN_TOKEN || '').trim();
+  if (!expected) return false;
+  const got = readAdminToken(req);
+  const a = Buffer.from(String(got), 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+app.get('/admin/orders', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).type('text/plain').send('Unauthorized');
+  const orders = pool
+    ? (await pool.query(
+      `SELECT id, email, size, sku, amount_cents, currency, shipping_name, shipping_address,
+              fulfillment_status, created_at
+       FROM orders ORDER BY created_at DESC LIMIT 200`
+    )).rows
+    : [];
+  const token = readAdminToken(req);
+  const q = `?token=${encodeURIComponent(token)}`;
+  const rows = orders.map((o) => {
+    const addr = formatAddress(o.shipping_address) || '—';
+    const next = o.fulfillment_status === 'to_order'
+      ? [['ordered', 'Mark ordered'], ['shipped', 'Mark shipped']]
+      : o.fulfillment_status === 'ordered'
+        ? [['shipped', 'Mark shipped']]
+        : [];
+    const buttons = next.map(([status, label]) => (
+      `<form method="post" action="/admin/orders/${escapeHtml(o.id)}/status${q}" style="display:inline">` +
+      `<input type="hidden" name="status" value="${escapeHtml(status)}">` +
+      `<button type="submit">${escapeHtml(label)}</button></form>`
+    )).join(' ');
+    return `<tr>
+      <td>${escapeHtml(o.id)}</td>
+      <td>${escapeHtml(formatOrderDate(o.created_at))}</td>
+      <td>${escapeHtml(o.size || '—')}</td>
+      <td>${escapeHtml(o.shipping_name || '—')}<br>${escapeHtml(o.email || '—')}</td>
+      <td style="white-space:pre-wrap">${escapeHtml(addr)}</td>
+      <td>${escapeHtml(formatAmount(o.amount_cents, o.currency))}</td>
+      <td>${escapeHtml(o.fulfillment_status || 'to_order')}</td>
+      <td>${buttons || '—'}</td>
+    </tr>`;
+  }).join('\n');
+  res.type('html').send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Van Reuben orders</title>
+  <style>body{font-family:ui-monospace,Menlo,monospace;margin:24px;font-size:13px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e5e5e5;padding:8px;text-align:left;vertical-align:top}button{font:inherit;background:#111;color:#fff;border:0;padding:6px 10px}</style>
+  </head><body><h1>Van Reuben orders</h1>
+  ${orders.length ? `<table><thead><tr><th>Order</th><th>Date</th><th>Size</th><th>Customer</th><th>Ship to</th><th>Paid</th><th>Fulfillment</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p>No paid orders yet.</p>'}
+  </body></html>`);
+});
+
+app.post('/admin/orders/:id/status', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).type('text/plain').send('Unauthorized');
+  const status = String((req.body && req.body.status) || '').trim();
+  if (!['ordered', 'shipped'].includes(status)) return res.status(400).send('Invalid status');
+  if (!pool) return res.status(503).send('Database is not configured');
+  const result = await pool.query(
+    'UPDATE orders SET fulfillment_status = $1, updated_at = now() WHERE id = $2 RETURNING id',
+    [status, req.params.id]
+  );
+  if (!result.rowCount) return res.status(404).send('Order not found');
+  res.redirect(303, `/admin/orders?token=${encodeURIComponent(readAdminToken(req))}`);
+});
+
 app.use((_req, res) => {
   res.status(404).type('text/plain').send('Not found');
 });
+
 
 async function start() {
   try {

@@ -12,7 +12,11 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_address jsonb,
   customer_details jsonb,
   email_sent_at timestamptz,
+  fulfillment_status text NOT NULL DEFAULT 'to_order',
+  fulfillment_email_sent_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS orders_email_idx ON orders (email);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfillment_status text NOT NULL DEFAULT 'to_order';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfillment_email_sent_at timestamptz;

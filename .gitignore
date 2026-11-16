@@ -4,3 +4,4 @@ preview.png
 node_modules/
 .env
 .env.local
+.admin-token
