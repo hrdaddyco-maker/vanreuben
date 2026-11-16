@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VR-001 — VAN REUBEN</title>
+<style>
+@font-face{
+  font-family:"IBM Plex Mono";
+  src:url("fonts/IBMPlexMono-Regular.ttf") format("truetype");
+  font-weight:400;font-style:normal;font-display:swap;
+}
+@font-face{
+  font-family:"IBM Plex Mono";
+  src:url("fonts/IBMPlexMono-Medium.ttf") format("truetype");
+  font-weight:500;font-style:normal;font-display:swap;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{
+  height:100%;background:#fff;color:#111;
+  font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  font-size:16px;font-weight:400;line-height:1.2;
+  -webkit-font-smoothing:antialiased;text-transform:uppercase;
+}
+button,input{font:inherit;color:inherit;text-transform:uppercase;background:none;border:0;cursor:pointer;}
+a{color:inherit;text-decoration:none;}
+
+.nav{
+  position:fixed;top:0;left:0;right:0;z-index:99;
+  height:64px;display:flex;align-items:center;
+  padding:12px 16px;background:#fff;
+}
+.brand{position:absolute;left:16px;top:0;height:64px;display:flex;align-items:center;
+  font-weight:500;letter-spacing:.08em;font-size:16px;}
+.bag-btn{position:absolute;right:16px;top:0;height:64px;display:flex;align-items:center;gap:8px;}
+.bag-btn svg{width:24px;height:24px;}
+.bag-count{font-size:14px;}
+
+.stage{
+  position:fixed;inset:0;padding:64px 16px 120px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+
+.viewer-wrap{
+  position:relative;
+  width:min(100%,600px);
+  aspect-ratio:1/1;
+  perspective:1000px;
+  touch-action:none;
+}
+.viewer{
+  position:absolute;inset:0;
+  transform-style:preserve-3d;
+  will-change:transform;
+  transition:transform .4s cubic-bezier(.22,1,.36,1);
+}
+.viewer.is-live{transition:none;}
+.frame{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;
+  transition:opacity .18s linear;
+}
+.frame.on{opacity:1;pointer-events:auto;}
+.frame img{
+  width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none;
+  display:block;
+}
+.frame.is-cutout img{
+  filter:drop-shadow(0 10px 16px rgba(0,0,0,.08));
+}
+.shine{
+  position:absolute;inset:0;pointer-events:none;border-radius:0;
+  background:radial-gradient(circle at var(--gx,50%) var(--gy,50%),
+    rgba(255,255,255,.28) 0%,rgba(255,255,255,0) 42%);
+  opacity:0;mix-blend-mode:soft-light;transition:opacity .3s;
+}
+.viewer-wrap:hover .shine,.viewer-wrap.is-touching .shine{opacity:1;}
+
+.arrow{
+  position:absolute;top:50%;z-index:5;width:32px;height:32px;
+  display:flex;align-items:center;justify-content:center;
+  transform:translateY(-50%);
+  color:#111;
+}
+.arrow.prev{left:-72px;}
+.arrow.next{right:-72px;}
+.arrow svg{width:28px;height:28px;}
+@media(max-width:1024px){.arrow{display:none;}}
+
+.dots{
+  position:absolute;left:0;right:0;bottom:-28px;
+  display:flex;justify-content:center;gap:8px;
+}
+.dots button{
+  width:4px;height:4px;border-radius:50%;background:#d6d3d1;padding:0;
+  transition:background .2s;
+}
+.dots button.on{background:#1c1917;}
+
+.bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 16px 16px;background:#fff;
+}
+.bar-inner{width:min(100%,600px);}
+.cta{
+  width:100%;height:48px;display:flex;align-items:center;justify-content:center;
+  gap:14px;font-weight:500;letter-spacing:.04em;position:relative;
+}
+.cta .name{padding:8px 4px;}
+.swatch{
+  width:12px;height:12px;border-radius:50%;border:1px solid #111;
+  background:#4a5a3a;padding:0;
+}
+.sizes{
+  display:none;width:100%;justify-content:space-between;
+  padding:8px 0 4px;
+}
+.sizes.open{display:flex;}
+.sizes button{
+  flex:1;height:40px;text-align:center;font-weight:500;
+}
+.sizes button:hover{opacity:.6;}
+.sizes button.sel{text-decoration:underline;text-underline-offset:4px;}
+.info-btn,.info-copy{
+  width:100%;text-align:center;font-size:16px;line-height:1.5;
+}
+.info-btn{height:36px;opacity:.9;}
+.info-copy{
+  display:none;padding:8px 8px 12px;white-space:pre-wrap;text-wrap:balance;
+  font-weight:400;
+}
+.info-copy.open{display:block;}
+
+.cart{
+  position:fixed;inset:0;z-index:200;background:#fff;
+  display:none;flex-direction:column;padding:16px;
+  overflow:auto;
+}
+.cart.open{display:flex;}
+.cart-top{height:48px;display:flex;align-items:center;justify-content:space-between;font-weight:500;}
+.cart-list{flex:1;padding:32px 0;max-width:600px;width:100%;margin:0 auto;}
+.cart-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;}
+.cart-empty{text-align:center;padding:48px 0;opacity:.7;}
+.cart-foot{max-width:600px;width:100%;margin:0 auto;padding:16px 0;}
+.cart-total{display:flex;justify-content:space-between;margin-bottom:16px;font-weight:500;}
+.cart-note{text-align:center;opacity:.7;font-size:14px;}
+
+@media (prefers-reduced-motion:reduce){
+  .viewer,.frame,.shine{transition:none !important;}
+}
+</style>
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="./">VAN REUBEN</a>
+    <button class="bag-btn" id="bagBtn" aria-label="Open cart">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="6" y="8" width="12" height="10" rx="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M9 7V7C9 5.34315 10.3431 4 12 4V4C13.6569 4 15 5.34315 15 7V7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <span class="bag-count" id="bagCount">0</span>
+    </button>
+  </header>
+
+  <main class="stage">
+    <div class="viewer-wrap" id="wrap">
+      <div class="viewer" id="viewer">
+        <div class="frame is-cutout on" data-i="0"><img src="img/jacket.png" alt="VR-001 olive officer leather jacket"></div>
+        <div class="frame" data-i="1"><img src="img/front.jpg" alt="VR-001 front look"></div>
+        <div class="frame" data-i="2"><img src="img/left.jpg" alt="VR-001 side look"></div>
+        <div class="frame" data-i="3"><img src="img/down.jpg" alt="VR-001 detail look"></div>
+        <div class="frame" data-i="4"><img src="img/hype.jpg" alt="Van Reuben Urban Armor"></div>
+        <div class="shine" id="shine"></div>
+      </div>
+      <button class="arrow prev" id="prev" aria-label="Previous image">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M20 6L10 16L20 26" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button class="arrow next" id="next" aria-label="Next image">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M12 6L22 16L12 26" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <div class="dots" id="dots"></div>
+    </div>
+  </main>
+
+  <div class="bar">
+    <div class="bar-inner">
+      <div class="cta" id="cta">
+        <button class="name" id="ctaHit" type="button"><span id="ctaLabel">VR-001</span></button>
+        <button class="swatch" type="button" aria-label="Olive" title="Olive"></button>
+      </div>
+      <div class="sizes" id="sizes">
+        <button type="button">XS</button>
+        <button type="button">S</button>
+        <button type="button">M</button>
+        <button type="button">L</button>
+        <button type="button">XL</button>
+        <button type="button">XXL</button>
+      </div>
+      <button class="info-btn" id="infoBtn" type="button">Information</button>
+      <div class="info-copy" id="infoCopy">Belted military silhouette in heavyweight olive leather.
+Stand collar, twin chest flaps, epaulettes, utility pockets.
+Genuine leather · Full lining
+Ships worldwide · 30-day returns
+$420.00 · Style VR-001</div>
+    </div>
+  </div>
+
+  <div class="cart" id="cart" role="dialog" aria-label="Cart">
+    <div class="cart-top">
+      <span>Cart</span>
+      <button type="button" id="cartClose" aria-label="Close cart">Close</button>
+    </div>
+    <div class="cart-list" id="cartList"></div>
+    <div class="cart-foot" id="cartFoot" hidden>
+      <div class="cart-total"><span>Total</span><span id="cartTotal">$0</span></div>
+      <p class="cart-note">Checkout is not available yet.</p>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const frames=[...document.querySelectorAll('.frame')];
+  const n=frames.length;
+  const wrap=document.getElementById('wrap');
+  const viewer=document.getElementById('viewer');
+  const shine=document.getElementById('shine');
+  const dots=document.getElementById('dots');
+  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const coarse=window.matchMedia('(hover: none), (pointer: coarse)').matches;
+
+  let index=0, dragging=false, lastX=0, acc=0, live=false;
+  let idleTimer=null, idleAng=0, idleDir=1, rafIdle=null;
+
+  for(let i=0;i<n;i++){
+    const b=document.createElement('button');
+    b.type='button';
+    b.setAttribute('aria-label','Go to image '+(i+1));
+    if(i===0)b.className='on';
+    b.addEventListener('click',()=>go(i));
+    dots.appendChild(b);
+  }
+  const dotBtns=[...dots.children];
+
+  function go(i){
+    index=(i+n)%n;
+    frames.forEach((f,k)=>f.classList.toggle('on',k===index));
+    dotBtns.forEach((b,k)=>b.classList.toggle('on',k===index));
+  }
+  document.getElementById('prev').addEventListener('click',()=>go(index-1));
+  document.getElementById('next').addEventListener('click',()=>go(index+1));
+
+  function tilt(px,py){
+    if(reduce)return;
+    const rx=(0.5-py)*14;
+    const ry=(px-0.5)*18;
+    viewer.classList.add('is-live');
+    live=true;
+    viewer.style.transform='rotateX('+rx.toFixed(2)+'deg) rotateY('+ry.toFixed(2)+'deg)';
+    shine.style.setProperty('--gx',(px*100).toFixed(1)+'%');
+    shine.style.setProperty('--gy',(py*100).toFixed(1)+'%');
+  }
+  function resetTilt(){
+    viewer.classList.remove('is-live');
+    live=false;
+    viewer.style.transform='rotateX(0deg) rotateY(0deg)';
+  }
+
+  function posFromEvent(e){
+    const r=wrap.getBoundingClientRect();
+    const x=e.clientX, y=e.clientY;
+    return {px:(x-r.left)/r.width, py:(y-r.top)/r.height, x, r};
+  }
+
+  wrap.addEventListener('pointerdown',e=>{
+    dragging=true; acc=0; lastX=e.clientX;
+    wrap.classList.add('is-touching');
+    wrap.setPointerCapture(e.pointerId);
+    stopIdle();
+  });
+  wrap.addEventListener('pointermove',e=>{
+    const p=posFromEvent(e);
+    if(p.px<0||p.px>1||p.py<0||p.py>1){
+      if(!dragging) return;
+    }
+    tilt(Math.min(1,Math.max(0,p.px)), Math.min(1,Math.max(0,p.py)));
+    if(dragging){
+      const dx=e.clientX-lastX;
+      lastX=e.clientX;
+      acc+=dx;
+      const step=Math.max(28, wrap.clientWidth/n*0.35);
+      if(Math.abs(acc)>=step){
+        go(index+(acc>0?-1:1));
+        acc=0;
+      }
+    }else if(!coarse && !reduce){
+      /* Hover maps X across the jacket to a 360 frame, like rotating the piece in place. */
+      const fi=Math.min(n-1, Math.max(0, Math.round(p.px*(n-1))));
+      if(fi!==index) go(fi);
+    }
+  });
+  function endPointer(){
+    dragging=false; acc=0;
+    wrap.classList.remove('is-touching');
+    resetTilt();
+    if(coarse) startIdle();
+  }
+  wrap.addEventListener('pointerup',endPointer);
+  wrap.addEventListener('pointercancel',endPointer);
+  wrap.addEventListener('pointerleave',()=>{
+    if(dragging)return;
+    resetTilt();
+  });
+  wrap.addEventListener('mouseleave',()=>{
+    if(dragging)return;
+    resetTilt();
+  });
+
+  function stopIdle(){
+    if(rafIdle){cancelAnimationFrame(rafIdle);rafIdle=null;}
+  }
+  function startIdle(){
+    if(reduce||rafIdle)return;
+    let last=performance.now();
+    const tick=now=>{
+      const dt=(now-last)/1000; last=now;
+      idleAng+=idleDir*dt*8;
+      if(idleAng>8){idleAng=8;idleDir=-1;}
+      if(idleAng<-8){idleAng=-8;idleDir=1;}
+      viewer.style.transform='rotateY('+idleAng.toFixed(2)+'deg) rotateX(2deg)';
+      rafIdle=requestAnimationFrame(tick);
+    };
+    rafIdle=requestAnimationFrame(tick);
+  }
+  if(coarse && !reduce) startIdle();
+
+  /* Cart / size — local placeholder only, no checkout */
+  const sizes=document.getElementById('sizes');
+  const cta=document.getElementById('ctaHit');
+  const ctaLabel=document.getElementById('ctaLabel');
+  const infoBtn=document.getElementById('infoBtn');
+  const infoCopy=document.getElementById('infoCopy');
+  const bagCount=document.getElementById('bagCount');
+  const cart=document.getElementById('cart');
+  const cartList=document.getElementById('cartList');
+  const cartFoot=document.getElementById('cartFoot');
+  const cartTotal=document.getElementById('cartTotal');
+  const items=[];
+  const PRICE=420;
+  let selecting=false, busy=false;
+
+  cta.addEventListener('click',e=>{
+    if(busy) return;
+    selecting=true;
+    sizes.classList.add('open');
+    ctaLabel.textContent='Select Size';
+  });
+  sizes.addEventListener('click',e=>{
+    const b=e.target.closest('button');
+    if(!b||busy)return;
+    [...sizes.children].forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel');
+    busy=true;
+    ctaLabel.textContent='Adding';
+    setTimeout(()=>{
+      items.push({name:'VR-001', size:b.textContent, price:PRICE});
+      bagCount.textContent=String(items.length);
+      renderCart();
+      ctaLabel.textContent='Added to Cart';
+      setTimeout(()=>{
+        selecting=false; busy=false;
+        sizes.classList.remove('open');
+        ctaLabel.textContent='VR-001';
+      },1000);
+    },400);
+  });
+  infoBtn.addEventListener('click',()=>{
+    infoCopy.classList.toggle('open');
+    infoBtn.textContent=infoCopy.classList.contains('open')?'Close':'Information';
+  });
+
+  function renderCart(){
+    if(!items.length){
+      cartList.innerHTML='<div class="cart-empty">Cart is empty</div>';
+      cartFoot.hidden=true;
+      return;
+    }
+    cartList.innerHTML=items.map(it=>'<div class="cart-row"><span>'+it.name+' / '+it.size+'</span><span>$'+it.price+'.00</span></div>').join('');
+    cartFoot.hidden=false;
+    const t=items.reduce((s,it)=>s+it.price,0);
+    cartTotal.textContent='$'+t+'.00';
+  }
+  renderCart();
+  document.getElementById('bagBtn').addEventListener('click',()=>cart.classList.add('open'));
+  document.getElementById('cartClose').addEventListener('click',()=>cart.classList.remove('open'));
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape') cart.classList.remove('open');
+    if(e.key==='ArrowLeft') go(index-1);
+    if(e.key==='ArrowRight') go(index+1);
+  });
+})();
+</script>
+</body>
+</html>
