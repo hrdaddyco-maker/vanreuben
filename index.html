@@ -351,6 +351,7 @@ $420.00 · Style VR-001</div>
   if(coarse && !reduce) startIdle();
 
   /* Size required, then Buy goes to live Stripe Checkout when available. */
+  const API='https://br-wispy-resonance-betlszuj-orders.compute.c-9.us-east-2.aws.neon.tech';
   const sizes=document.getElementById('sizes');
   const cta=document.getElementById('ctaHit');
   const ctaLabel=document.getElementById('ctaLabel');
@@ -429,7 +430,7 @@ $420.00 · Style VR-001</div>
     cartBuy.disabled=true;
     buy.textContent='Redirecting';
     try{
-      const r=await fetch('/checkout',{
+      const r=await fetch(API+'/checkout',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({size:selectedSize})
@@ -449,7 +450,7 @@ $420.00 · Style VR-001</div>
     }
   }
 
-  fetch('/api/checkout-status').then(r=>r.json()).then(s=>{
+  fetch(API+'/api/checkout-status').then(r=>r.json()).then(s=>{
     checkoutAvailable=!!s.available;
     updateBuy();
   }).catch(()=>{
