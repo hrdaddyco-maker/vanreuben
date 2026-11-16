@@ -10,6 +10,7 @@ const {
   formatAmount,
   sendFulfillmentEmail,
   escapeHtml,
+  supplierAdminHtml,
 } = require('../../lib/fulfillment');
 
 const AMOUNT_CENTS = 42000;
@@ -376,10 +377,15 @@ function adminPage(orders, token) {
   .mut{color:#666;}
   button{font:inherit;background:#111;color:#fff;border:0;padding:6px 10px;cursor:pointer;}
   .empty{padding:24px 0;color:#666;}
+  .supplier{margin:0 0 24px;padding:0 0 16px;border-bottom:1px solid #e5e5e5;}
+  .supplier h2{font-size:13px;font-weight:600;margin:0 0 8px;}
+  .supplier p{margin:0 0 8px;}
+  .supplier a{color:#111;}
 </style>
 </head>
 <body>
   <h1>Van Reuben orders</h1>
+  ${supplierAdminHtml()}
   ${orders && orders.length ? `<table>
     <thead><tr>
       <th>Order</th><th>Date</th><th>Size</th><th>Customer</th>

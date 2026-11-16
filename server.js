@@ -4,7 +4,7 @@ const path = require('path');
 const express = require('express');
 const { Pool } = require('pg');
 const { migrate } = require('./db/migrate');
-const { sendFulfillmentEmail, formatAddress, formatOrderDate, formatAmount, escapeHtml } = require('./lib/fulfillment');
+const { sendFulfillmentEmail, formatAddress, formatOrderDate, formatAmount, escapeHtml, supplierAdminHtml } = require('./lib/fulfillment');
 
 const PORT = Number(process.env.PORT) || 10000;
 const SKU = 'VR-001';
@@ -351,8 +351,9 @@ app.get('/admin/orders', express.urlencoded({ extended: false }), async (req, re
     </tr>`;
   }).join('\n');
   res.type('html').send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Van Reuben orders</title>
-  <style>body{font-family:ui-monospace,Menlo,monospace;margin:24px;font-size:13px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e5e5e5;padding:8px;text-align:left;vertical-align:top}button{font:inherit;background:#111;color:#fff;border:0;padding:6px 10px}</style>
+  <style>body{font-family:ui-monospace,Menlo,monospace;margin:24px;font-size:13px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e5e5e5;padding:8px;text-align:left;vertical-align:top}button{font:inherit;background:#111;color:#fff;border:0;padding:6px 10px}.supplier{margin:0 0 24px;padding:0 0 16px;border-bottom:1px solid #e5e5e5}.supplier h2{font-size:13px;font-weight:600;margin:0 0 8px}.supplier p{margin:0 0 8px}.supplier a{color:#111}</style>
   </head><body><h1>Van Reuben orders</h1>
+  ${supplierAdminHtml()}
   ${orders.length ? `<table><thead><tr><th>Order</th><th>Date</th><th>Size</th><th>Customer</th><th>Ship to</th><th>Paid</th><th>Fulfillment</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p>No paid orders yet.</p>'}
   </body></html>`);
 });
