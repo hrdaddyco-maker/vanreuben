@@ -1,0 +1,19 @@
+{
+  "name": "vanreuben",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Van Reuben VR-001 storefront and order backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node db/migrate.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.16.3",
+    "stripe": "^23.0.0"
+  }
+}

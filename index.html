@@ -150,6 +150,18 @@ a{color:inherit;text-decoration:none;}
 @media (prefers-reduced-motion:reduce){
   .viewer,.frame,.shine{transition:none !important;}
 }
+
+.buy{
+  width:100%;height:48px;margin-top:8px;background:#111;color:#fff;
+  font-weight:500;letter-spacing:.12em;display:none;
+}
+.buy:hover{background:#333;}
+.buy:disabled{background:#111;opacity:.4;cursor:not-allowed;}
+.buy.show{display:block;}
+.unavailable{
+  width:100%;text-align:center;padding:12px 0 4px;display:none;font-weight:500;
+}
+.unavailable.show{display:block;}
 </style>
 </head>
 <body>
@@ -198,6 +210,8 @@ a{color:inherit;text-decoration:none;}
         <button type="button">XL</button>
         <button type="button">XXL</button>
       </div>
+      <button class="buy" id="buy" type="button">Buy — $420.00</button>
+      <div class="unavailable" id="unavailable">Ordering is not yet available</div>
       <button class="info-btn" id="infoBtn" type="button">Information</button>
       <div class="info-copy" id="infoCopy">Belted military silhouette in heavyweight olive leather.
 Stand collar, twin chest flaps, epaulettes, utility pockets.
@@ -215,7 +229,8 @@ $420.00 · Style VR-001</div>
     <div class="cart-list" id="cartList"></div>
     <div class="cart-foot" id="cartFoot" hidden>
       <div class="cart-total"><span>Total</span><span id="cartTotal">$0</span></div>
-      <p class="cart-note">Checkout is not available yet.</p>
+      <button class="buy show" id="cartBuy" type="button">Buy — $420.00</button>
+      <p class="cart-note" id="cartNote"></p>
     </div>
   </div>
 
@@ -335,7 +350,7 @@ $420.00 · Style VR-001</div>
   }
   if(coarse && !reduce) startIdle();
 
-  /* Cart / size — local placeholder only, no checkout */
+  /* Size required, then Buy goes to live Stripe Checkout when available. */
   const sizes=document.getElementById('sizes');
   const cta=document.getElementById('ctaHit');
   const ctaLabel=document.getElementById('ctaLabel');
@@ -346,51 +361,123 @@ $420.00 · Style VR-001</div>
   const cartList=document.getElementById('cartList');
   const cartFoot=document.getElementById('cartFoot');
   const cartTotal=document.getElementById('cartTotal');
-  const items=[];
+  const cartNote=document.getElementById('cartNote');
+  const buy=document.getElementById('buy');
+  const cartBuy=document.getElementById('cartBuy');
+  const unavailable=document.getElementById('unavailable');
   const PRICE=420;
-  let selecting=false, busy=false;
+  let selectedSize=null, busy=false, checkoutAvailable=false;
 
-  cta.addEventListener('click',e=>{
+  function selected(){
+    return selectedSize;
+  }
+
+  function renderCart(){
+    if(!selectedSize){
+      cartList.innerHTML='<div class="cart-empty">Cart is empty</div>';
+      cartFoot.hidden=true;
+      bagCount.textContent='0';
+      return;
+    }
+    cartList.innerHTML='<div class="cart-row"><span>VR-001 / '+selectedSize+'</span><span>$'+PRICE+'.00</span></div>';
+    cartFoot.hidden=false;
+    cartTotal.textContent='$'+PRICE+'.00';
+    bagCount.textContent='1';
+    if(checkoutAvailable){
+      cartBuy.classList.add('show');
+      cartBuy.disabled=false;
+      cartNote.textContent='';
+    }else{
+      cartBuy.classList.remove('show');
+      cartNote.textContent='Ordering is not yet available';
+    }
+  }
+
+  function updateBuy(){
+    if(!checkoutAvailable){
+      buy.classList.remove('show');
+      if(sizes.classList.contains('open') || selectedSize){
+        unavailable.classList.add('show');
+      }
+      renderCart();
+      return;
+    }
+    unavailable.classList.remove('show');
+    if(selectedSize){
+      buy.classList.add('show');
+      buy.disabled=false;
+      buy.textContent='Buy — $'+PRICE+'.00';
+    }else{
+      buy.classList.remove('show');
+    }
+    renderCart();
+  }
+
+  async function startCheckout(){
     if(busy) return;
-    selecting=true;
+    if(!selectedSize){
+      sizes.classList.add('open');
+      ctaLabel.textContent='Select Size';
+      return;
+    }
+    if(!checkoutAvailable){
+      unavailable.classList.add('show');
+      return;
+    }
+    busy=true;
+    buy.disabled=true;
+    cartBuy.disabled=true;
+    buy.textContent='Redirecting';
+    try{
+      const r=await fetch('/checkout',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({size:selectedSize})
+      });
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok || !data.url){
+        throw new Error(data.error || 'Ordering is not yet available');
+      }
+      window.location=data.url;
+    }catch(err){
+      busy=false;
+      buy.disabled=false;
+      cartBuy.disabled=false;
+      buy.textContent='Buy — $'+PRICE+'.00';
+      unavailable.textContent=err.message || 'Ordering is not yet available';
+      unavailable.classList.add('show');
+    }
+  }
+
+  fetch('/api/checkout-status').then(r=>r.json()).then(s=>{
+    checkoutAvailable=!!s.available;
+    updateBuy();
+  }).catch(()=>{
+    checkoutAvailable=false;
+    updateBuy();
+  });
+
+  cta.addEventListener('click',()=>{
     sizes.classList.add('open');
     ctaLabel.textContent='Select Size';
+    if(!checkoutAvailable) unavailable.classList.add('show');
   });
   sizes.addEventListener('click',e=>{
     const b=e.target.closest('button');
     if(!b||busy)return;
     [...sizes.children].forEach(x=>x.classList.remove('sel'));
     b.classList.add('sel');
-    busy=true;
-    ctaLabel.textContent='Adding';
-    setTimeout(()=>{
-      items.push({name:'VR-001', size:b.textContent, price:PRICE});
-      bagCount.textContent=String(items.length);
-      renderCart();
-      ctaLabel.textContent='Added to Cart';
-      setTimeout(()=>{
-        selecting=false; busy=false;
-        sizes.classList.remove('open');
-        ctaLabel.textContent='VR-001';
-      },1000);
-    },400);
+    selectedSize=b.textContent.trim();
+    ctaLabel.textContent='VR-001 / '+selectedSize;
+    updateBuy();
   });
+  buy.addEventListener('click',startCheckout);
+  cartBuy.addEventListener('click',startCheckout);
   infoBtn.addEventListener('click',()=>{
     infoCopy.classList.toggle('open');
     infoBtn.textContent=infoCopy.classList.contains('open')?'Close':'Information';
   });
 
-  function renderCart(){
-    if(!items.length){
-      cartList.innerHTML='<div class="cart-empty">Cart is empty</div>';
-      cartFoot.hidden=true;
-      return;
-    }
-    cartList.innerHTML=items.map(it=>'<div class="cart-row"><span>'+it.name+' / '+it.size+'</span><span>$'+it.price+'.00</span></div>').join('');
-    cartFoot.hidden=false;
-    const t=items.reduce((s,it)=>s+it.price,0);
-    cartTotal.textContent='$'+t+'.00';
-  }
   renderCart();
   document.getElementById('bagBtn').addEventListener('click',()=>cart.classList.add('open'));
   document.getElementById('cartClose').addEventListener('click',()=>cart.classList.remove('open'));
